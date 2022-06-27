@@ -14,9 +14,6 @@ header = {
     'User-Agent': 'Mozilla/5.0 (iPad; CPU OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148;zfsoft',
 }
 
-with open('app-user.json', encoding='utf-8') as f:
-    users = json.load(f)
-
 
 def cbc_encrypt(plaintext: str) -> str:
     """
@@ -48,12 +45,23 @@ def cbc_decrypt(ciphertext: str) -> str:
     return plaintext[:-plaintext[-1]].decode()
 
 
-for user in users:
+def check(username: str, password: str, location: str, coordinate: str) -> str:
+    """
+    进行一次报的送
+    :param username: 学号
+    :param password: 密码，教务网的
+    :param location: 定位地址名，XX省XX市这样的
+    :param coordinate: 经纬度，用英文逗号隔开
+    :return: 返回报送信息，如果是代码层面监测到错误了，则开头必定为 !!! 三个感叹号
+    """
     try:
-        user["redirectUrl"] = "https://myapp.zjgsu.edu.cn/home/index"
-        user["clientId"] = "qnFZATsB6D25EnZeII"
-        user["mobileBT"] = "11111111-1111-1111-1111-111111111111"
-
+        user = {
+            "username": username,
+            "password": password,
+            "redirectUrl": "https://myapp.zjgsu.edu.cn/home/index",
+            "clientId": "qnFZATsB6D25EnZeII",
+            "mobileBT": "11111111-1111-1111-1111-111111111111"
+        }
         s = requests.session()
         res = s.post('https://uia.zjgsu.edu.cn/cas/mobile/getAccessToken', data=user, headers=header)
         access_token = res.json()['access_token']
@@ -72,12 +80,9 @@ for user in users:
             data = """{"place": "浙江省,杭州市,钱塘区,学正街18号","coordinate": "120.388529,30.308752"}""".encode('utf-8')
             res = s.get('https://ticket.zjgsu.edu.cn/stucheckservice/service/getchecklist', headers=headers, data=data)
             if len(res.json()['data']['items']) > 0:
-                print(datetime.datetime.now().strftime('%Y-%m-%d'), '报送情况： *主动报送*')
-                continue
+                return '主动报送'
             res = s.post('https://ticket.zjgsu.edu.cn/stucheckservice/service/stuclockin', headers=headers, data=data)
-            print(datetime.datetime.now().strftime('%Y-%m-%d'), '报送情况：' + (
-                '成功打卡' if res.json()['code'] == 20000 else '打卡失败！！！！！！'
-            ))
+            return '成功打卡' if res.json()['code'] == 20000 else '!!!打卡失败!!!'
         elif sys.argv[1] == 'yzy':
             # 这里是新的两个参数的破解方案
             t = str(int(datetime.datetime.now().timestamp() * 1000))
@@ -85,17 +90,37 @@ for user in users:
             headers["zjgsuAuth"] = hashlib.md5((user['username'] + '*' + tp + '^25A622DCE625882D8085CC9F00BF8C12')
                                                .encode('utf-8')).hexdigest()
             headers['zjgsuCheck'] = cbc_encrypt('882D' + tp)
-            # 虽然你什么都不传输过去也是可以的，但是感觉还是得给学校一点面子，毕竟让辅导员看到我啥都没填写就推送的也不太好是不是啊，所以就随便写一点把
-            # 现在增加了经纬度的检查，那……我现在在 Apple Park 吧！
-            data = """{"currentResd":"AB省CD市","fromHbToZj":"C","fromWtToHz":"B","meetCase":"C","travelCase":"D",
-            "medObsv":"B","belowCase":"D","hzQrCode":"A","specialDesc":"无","deviceId":"iPhone 104 pro max plus",
-            "fromDevice":"WeChat","isNewEpid":"否","location":"AB省CD市","coordinate":"37.3346437,122.0131992"}""".encode('utf-8')
+
+            data = {
+                "currentResd": location,
+                "fromHbToZj": "C",
+                "fromWtToHz": "B",
+                "meetCase": "C",
+                "travelCase": "D",
+                "medObsv": "B",
+                "belowCase": "D",
+                "hzQrCode": "A",
+                "specialDesc": "无",
+                "deviceId": "iPhone 104 pro max plus",
+                "fromDevice": "WeChat",
+                "isNewEpid": "否",
+                "location": location,
+                "coordinate": coordinate
+            }
+            data = json.dumps(data, ensure_ascii=False).encode('utf-8')
             res = s.post('https://yzy.zjgsu.edu.cn/cloudbattleservice/service/add', headers=headers, data=data)
             msg = res.json()['message']
-            print(datetime.datetime.now().strftime('%Y-%m-%d'), '报送情况:', msg)
+            return msg
         else:
-            print(datetime.datetime.now().strftime('%Y-%m-%d'), '参数错误')
-        time.sleep(10)
+            return '!!!参数错误!!!'
     except Exception as e:
-        print(datetime.datetime.now().strftime('%Y-%m-%d'), '报送情况：出错导致打卡失败！！！！！！')
-        continue
+        return '!!!出错导致打卡失败!!!'
+
+
+if __name__ == '__main__':
+    with open('app-user.json', encoding='utf-8') as f:
+        users = json.load(f)
+    for u in users:
+        res = check(u['username'], u['password'], 'AB省CD市', '37.3346437,122.0131992')
+        print(datetime.datetime.now().strftime('%Y-%m-%d'), res)
+        time.sleep(10)
